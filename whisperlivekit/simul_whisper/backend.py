@@ -271,8 +271,8 @@ class SimulStreamingASR():
             if not self._can_use_faster(compatible_faster_whisper):
                 raise RuntimeError("faster-whisper backend requested but Faster-Whisper is unavailable or incompatible with the provided model.")
             return "faster-whisper"
-        if choice == "openai-api":
-            raise ValueError("openai-api backend is only supported with the LocalAgreement policy.")
+        if choice == "openai-api" or choice == "whisper.cpp-api":
+            raise ValueError(f"{choice} backend is only supported with the LocalAgreement policy.")
         # auto mode
         if platform.system() == "Darwin" and self._can_use_mlx(compatible_whisper_mlx):
             return "mlx-whisper"

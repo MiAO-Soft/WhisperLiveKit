@@ -6,7 +6,7 @@ from functools import lru_cache
 import time
 import logging
 import platform
-from .backends import FasterWhisperASR, MLXWhisper, WhisperASR, OpenaiApiASR
+from .backends import FasterWhisperASR, MLXWhisper, WhisperASR, OpenaiApiASR, WhisperCppApiASR
 from whisperlivekit.warmup import warmup_asr
 from whisperlivekit.model_paths import resolve_model_path, model_path_and_type
 from whisperlivekit.backend_support import (
@@ -100,6 +100,9 @@ def backend_factory(
     if backend_choice == "openai-api":
         logger.debug("Using OpenAI API.")
         asr = OpenaiApiASR(lan=lan)
+    elif backend_choice == "whisper.cpp-api":
+        logger.debug("Using Whisper.cpp API.")
+        asr = WhisperCppApiASR(lan=lan)
     else:
         backend_choice = _normalize_backend_choice(
             backend_choice,

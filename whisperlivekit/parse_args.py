@@ -131,15 +131,15 @@ def parse_args():
     parser.add_argument(
         "--backend-policy",
         type=str,
-        default="simulstreaming",
+        default="localagreement",
         choices=["1", "2", "simulstreaming", "localagreement"],
         help="Select the streaming policy: 1 or 'simulstreaming' for AlignAtt, 2 or 'localagreement' for LocalAgreement.",
     )
     parser.add_argument(
         "--backend",
         type=str,
-        default="auto",
-        choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "openai-api"],
+        default="whisper.cpp-api",
+        choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "openai-api", "whisper.cpp-api"],
         help="Select the Whisper backend implementation (auto: prefer MLX on macOS, otherwise Faster-Whisper, else Whisper). Use 'openai-api' with --backend-policy localagreement to call OpenAI's API.",
     )
     parser.add_argument(
