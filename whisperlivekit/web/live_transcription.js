@@ -49,6 +49,8 @@ const microphoneSelect = document.getElementById("microphoneSelect");
 const settingsToggle = document.getElementById("settingsToggle");
 const settingsDiv = document.querySelector(".settings");
 
+settingsDiv.classList.toggle("visible");
+
 // if (isExtension) {
 //   chrome.runtime.onInstalled.addListener((details) => {
 //     if (details.reason.search(/install/g) === -1) {

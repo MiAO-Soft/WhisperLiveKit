@@ -27,6 +27,8 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech"
 ]
 dependencies = [
+    "requests",
+    "openai",
     "fastapi",
     "librosa",
     "soundfile",

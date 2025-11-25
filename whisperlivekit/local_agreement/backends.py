@@ -5,6 +5,7 @@ import soundfile as sf
 import math
 from typing import List
 import numpy as np
+import requests, time
 from whisperlivekit.timed_objects import ASRToken
 from whisperlivekit.model_paths import resolve_model_path, model_path_and_type
 from whisperlivekit.whisper.transcribe import transcribe as whisper_transcribe
@@ -315,6 +316,8 @@ class WhisperCppApiASR(ASRBase):
 
         self.use_vad_opt = False
 
+        self.base_url = f"http://localhost:{self.whisper_server_port}"
+
         # reset the task in set_translate_task
         self.task = "transcribe"
 
@@ -403,70 +406,86 @@ class WhisperCppApiASR(ASRBase):
                 self.server_process.terminate()
             raise
         
-        from openai import OpenAI
-        self.client = OpenAI(
-            base_url=f"http://127.0.0.1:{self.whisper_server_port}/v1",
-            api_key="sk-not-needed"
-        )
+        # from openai import OpenAI
+        # self.client = OpenAI(
+        #     base_url=f"http://127.0.0.1:{self.whisper_server_port}/v1",
+        #     api_key="sk-not-needed"
+        # )
 
         self.transcribed_seconds = 0  # for logging how many seconds were processed by API, to know the cost
-
-    def ts_words(self, segments):
+    
+    def ts_words(self, res):
         no_speech_segments = []
         if self.use_vad_opt:
-            for segment in segments.segments:
-                # TODO: threshold can be set from outside
+            for segment in res.segments:
                 if segment["no_speech_prob"] > 0.8:
                     no_speech_segments.append((segment.get("start"), segment.get("end")))
 
         o = []
-        if segments is None:
+        if res is None:
             return o
-        for segment in segments:
-            for word in segment.words:
+        for segment in res.segments:
+            for word in segment['words']:
                 start = word['start']
                 end = word['end']
                 if any(s[0] <= start <= s[1] for s in no_speech_segments):
                     # print("Skipping word", word.get("word"), "because it's in a no-speech segment")
                     continue
-                o.append((start, end, word['word']))
+                o.append(ASRToken(start, end, word['word']))
         return o
 
 
     def segments_end_ts(self, res):
         o = []
         for segment in res.segments:
-            o.append(segment.end)
+            o.append(segment['end'])
         return o
 
     def transcribe(self, audio_data, prompt=None, *args, **kwargs):
+        from openai.types.audio import Transcription
+
         # Write the audio data to a buffer
         buffer = io.BytesIO()
-        buffer.name = "temp.wav"
+        buffer.name = "temp1.wav"
         sf.write(buffer, audio_data, samplerate=16000, format='WAV', subtype='PCM_16')
         buffer.seek(0)  # Reset buffer's position to the beginning
 
         self.transcribed_seconds += math.ceil(len(audio_data)/16000)  # it rounds up to the whole seconds
 
-        params = {
-            "model": self.model_name,
-            "file": buffer,
-            "response_format": self.response_format,
-            "temperature": self.temperature,
-            "timestamp_granularities": ["word", "segment"]
+        files = {
+            'file': ('temp1.wav', buffer, 'audio/wav')
         }
+
+        data = {
+            "model": self.model_name,
+            "response_format": self.response_format,
+            "temperature": str(self.temperature),
+            "temperature_inc": "0.2", 
+            "timestamp_granularities[]": ["word", "segment"],
+            "vad": "false",
+            "n_processors": "1"
+        }
+
         if self.task != "translate" and self.original_language:
-            params["language"] = self.original_language
+            data["language"] = self.original_language
         if prompt:
-            params["prompt"] = prompt
+            data["prompt"] = prompt
 
-        proc = self.client.audio.transcriptions
+        start_time = time.time()
 
-        # Process transcription/translation
-        transcript = proc.create(**params)
-        logger.debug(f"Whisper.cpp API processed accumulated {self.transcribed_seconds} seconds")
+        resp = requests.post(
+            f"{self.base_url}/v1/audio/transcriptions",
+            files=files,
+            data=data
+        )
+        resp.raise_for_status()
 
-        return transcript
+        elapsed = time.time() - start_time
+        print(f"[Transcribe API] 响应时间: {elapsed:.3f} 秒")
+
+        json_data = resp.json()
+        transcription = Transcription.model_validate(json_data)
+        return transcription
 
     def use_vad(self):
         self.use_vad_opt = True
