@@ -131,14 +131,14 @@ def parse_args():
     parser.add_argument(
         "--backend-policy",
         type=str,
-        default="localagreement",
+        default="simulstreaming",
         choices=["1", "2", "simulstreaming", "localagreement"],
         help="Select the streaming policy: 1 or 'simulstreaming' for AlignAtt, 2 or 'localagreement' for LocalAgreement.",
     )
     parser.add_argument(
         "--backend",
         type=str,
-        default="whisper.cpp-api",
+        default="auto",
         choices=["auto", "mlx-whisper", "faster-whisper", "whisper", "openai-api", "whisper.cpp-api"],
         help="Select the Whisper backend implementation (auto: prefer MLX on macOS, otherwise Faster-Whisper, else Whisper). Use 'openai-api' with --backend-policy localagreement to call OpenAI's API.",
     )
@@ -187,6 +187,27 @@ def parse_args():
         action="store_true",
         default=False,
         help="If set, raw PCM (s16le) data is expected as input and FFmpeg will be bypassed. Frontend will use AudioWorklet instead of MediaRecorder."
+    )
+    # StrixHalo specific arguments
+    strixHalo_group = parser.add_argument_group('Strix Halo local ai station arguments')
+    strixHalo_group.add_argument(
+        "--local-api",
+        action="store_true",
+        default=False,
+        dest="local_api",
+        help="Use local api server deployed on Strix Halo. If set to true, --backend-policy will be `localagreement` and --backend will be `whisper.cpp-api`"
+    )
+    strixHalo_group.add_argument(
+        "--whisper-cpp-base-url",
+        type=str,
+        help="Local whisper cpp api service base url",
+        default="http://127.0.0.1:11818"
+    )
+    strixHalo_group.add_argument(
+        "--translate-base-url",
+        type=str,
+        help="Local llama.cpp api service base url",
+        default="http://127.0.0.1:1234"
     )
     # SimulStreaming-specific arguments
     simulstreaming_group = parser.add_argument_group('SimulStreaming arguments (only used with --backend simulstreaming)')

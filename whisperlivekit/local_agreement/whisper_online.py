@@ -77,6 +77,7 @@ def backend_factory(
             model_dir,
             model_path,
             direct_english_translation,
+            whisper_cpp_base_url,
             buffer_trimming,
             buffer_trimming_sec,
             confidence_validation,
@@ -102,7 +103,7 @@ def backend_factory(
         asr = OpenaiApiASR(lan=lan)
     elif backend_choice == "whisper.cpp-api":
         logger.debug("Using Whisper.cpp API.")
-        asr = WhisperCppApiASR(lan=lan)
+        asr = WhisperCppApiASR(lan=lan, base_url=whisper_cpp_base_url)
     else:
         backend_choice = _normalize_backend_choice(
             backend_choice,

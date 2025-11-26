@@ -303,114 +303,33 @@ class OpenaiApiASR(ASRBase):
 class WhisperCppApiASR(ASRBase):
     """Uses WhisperCpp's API for audio transcription."""
 
-    def __init__(self, lan=None, temperature=0, logfile=sys.stderr, whisper_server_port=18181):
+    def __init__(self, lan=None, base_url=None, temperature=0, logfile=sys.stderr):
         self.logfile = logfile
 
         self.model_name = "ggml-medium"
         self.original_language = None if lan == "auto" else lan # ISO-639-1 language code
         self.response_format = "verbose_json" 
         self.temperature = temperature
-        self.whisper_server_port = whisper_server_port
-
+        self.base_url = base_url
         self.load_model()
 
         self.use_vad_opt = False
-
-        self.base_url = f"http://localhost:{self.whisper_server_port}"
-
         # reset the task in set_translate_task
         self.task = "transcribe"
 
     def load_model(self, *args, **kwargs):
-        import os
-        import sys
-        import platform
-        import subprocess
-        import time
         import requests
-        
-        system = platform.system().lower()
-        
-        whisper_cpp_dir = os.path.join(os.path.dirname(__file__), "../../whisper.cpp")
-        
-        if system == "windows":
-            server_executable = os.path.join(whisper_cpp_dir, "win", "whisper-server.exe")
-        elif system == "linux":
-            server_executable = os.path.join(whisper_cpp_dir, "linux", "whisper-server")
-        else:
-            raise NotImplementedError(f"Unsupported operating system: {system}")
-        
-        if not os.path.exists(server_executable):
-            raise FileNotFoundError(f"whisper-server not found at: {server_executable}")
-        
-        model_path = os.path.join(whisper_cpp_dir, "models", self.model_name + ".bin")
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file not found at: {model_path}")
-        
-        vad_path = os.path.join(whisper_cpp_dir, "models", "ggml-silero-v6.2.0.bin")
-        if not os.path.exists(vad_path):
-            raise FileNotFoundError(f"Model file not found at: {vad_path}")
-        
-        public_path = os.path.join(whisper_cpp_dir, "static")
-        
-        command_args = [
-            server_executable,
-            "-m", model_path,
-            "--host", "0.0.0.0",
-            "--port", str(self.whisper_server_port),
-            "-t", "8",
-            "-l", "auto",
-            "--public", public_path,
-            "-p", "4",
-            "--vad",
-            "--vad-model", vad_path,
-            "-mc", "0",
-            "-di"
-        ]
-        
+
         try:
-            try:
-                health_url = f"http://127.0.0.1:{self.whisper_server_port}/health"
-                response = requests.get(health_url, timeout=2)
-                if response.status_code == 200:
-                    logger.info(f"whisper-server is already running on port {self.whisper_server_port}")
-                    self.server_process = None
-                else:
-                    raise requests.ConnectionError("Server not responding properly")
-            except (requests.ConnectionError, requests.Timeout):
-                logger.info(f"Starting whisper-server with command: {' '.join(command_args)}")
-                self.server_process = subprocess.Popen(
-                    command_args,
-                    cwd=os.path.dirname(server_executable),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                
-                logger.info(f"Waiting for whisper-server to start on port {self.whisper_server_port}...")
-                for i in range(30):  # 最多等待30秒
-                    try:
-                        health_url = f"http://127.0.0.1:{self.whisper_server_port}/health"
-                        response = requests.get(health_url, timeout=2)
-                        if response.status_code == 200:
-                            logger.info(f"whisper-server started successfully on port {self.whisper_server_port}")
-                            break
-                    except (requests.ConnectionError, requests.Timeout):
-                        if i == 29: 
-                            raise TimeoutError(f"whisper-server failed to start within 30 seconds on port {self.whisper_server_port}")
-                        time.sleep(1)
-                
-        except Exception as e:
-            logger.error(f"Failed to start whisper-server: {e}")
-            if hasattr(self, 'server_process') and self.server_process:
-                self.server_process.terminate()
-            raise
-        
-        # from openai import OpenAI
-        # self.client = OpenAI(
-        #     base_url=f"http://127.0.0.1:{self.whisper_server_port}/v1",
-        #     api_key="sk-not-needed"
-        # )
+            health_url = f"{self.base_url}/health"
+            response = requests.get(health_url, timeout=2)
+            if response.status_code == 200:
+                logger.info(f"whisper-server is running at {self.base_url}")
+                self.server_process = None
+            else:
+                raise requests.ConnectionError("Server not responding properly")
+        except Exception:
+            raise requests.ConnectionError(f"whisper cpp api server {self.base_url} not responding properly")
 
         self.transcribed_seconds = 0  # for logging how many seconds were processed by API, to know the cost
     
@@ -425,13 +344,14 @@ class WhisperCppApiASR(ASRBase):
         if res is None:
             return o
         for segment in res.segments:
-            for word in segment['words']:
-                start = word['start']
-                end = word['end']
-                if any(s[0] <= start <= s[1] for s in no_speech_segments):
-                    # print("Skipping word", word.get("word"), "because it's in a no-speech segment")
-                    continue
-                o.append(ASRToken(start, end, word['word']))
+            o.append(ASRToken(start=segment['start'], end=segment['end'], text=segment['text'], detected_language=res.model_extra['detected_language']))
+            # for word in segment['words']:
+            #     start = word['start']
+            #     end = word['end']
+            #     if any(s[0] <= start <= s[1] for s in no_speech_segments):
+            #         # print("Skipping word", word.get("word"), "because it's in a no-speech segment")
+            #         continue
+            #     o.append(ASRToken(start, end, word['word']))
         return o
 
 
@@ -466,10 +386,10 @@ class WhisperCppApiASR(ASRBase):
             "n_processors": "1"
         }
 
-        if self.task != "translate" and self.original_language:
-            data["language"] = self.original_language
-        if prompt:
-            data["prompt"] = prompt
+        # if self.task != "translate" and self.original_language:
+        #     data["language"] = self.original_language
+        # if prompt:
+        data["prompt"] = f"以下是{self.original_language}"
 
         start_time = time.time()
 
@@ -481,10 +401,11 @@ class WhisperCppApiASR(ASRBase):
         resp.raise_for_status()
 
         elapsed = time.time() - start_time
-        print(f"[Transcribe API] 响应时间: {elapsed:.3f} 秒")
 
         json_data = resp.json()
         transcription = Transcription.model_validate(json_data)
+
+        # print(f"[Transcribe API] 响应时间: {elapsed:.3f} 秒 -> {transcription.text}")
         return transcription
 
     def use_vad(self):

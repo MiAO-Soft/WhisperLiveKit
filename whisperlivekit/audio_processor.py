@@ -119,7 +119,7 @@ class AudioProcessor:
             self.sep = self.transcription.asr.sep   
         if self.args.diarization:
             self.diarization = online_diarization_factory(self.args, models.diarization_model)
-        if models.translation_model:
+        if self.args.local_api or models.translation_model:
             self.translation = online_translation_factory(self.args, models.translation_model)
 
     async def _push_silence_event(self) -> None:
@@ -364,19 +364,25 @@ class AudioProcessor:
                 item = await get_all_from_queue(self.translation_queue)
                 if item is SENTINEL:
                     logger.debug("Translation processor received sentinel. Finishing.")
+                    self.translation.validate_buffer_and_reset()
                     break
                 elif type(item) is Silence:
                     if item.is_starting:
-                        new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
+                        logger.info(f"translation is starting: {item}")
+                        continue
+                        # new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
                     if item.has_ended:
+                        logger.info(f"translation has_ended: {item}")
                         self.translation.insert_silence(item.duration)
                         continue
                 elif isinstance(item, ChangeSpeaker):
+                    logger.info(f"translation change speaker: {item}")
                     new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
                     pass
                 else:
                     self.translation.insert_tokens(item)
                     new_translation, new_translation_buffer = await asyncio.to_thread(self.translation.process)
+                    # logger.info(f"new_translation: {new_translation}, {item}")
                 async with self.lock:
                     self.state.new_translation.append(new_translation)
                     self.state.new_translation_buffer = new_translation_buffer

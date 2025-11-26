@@ -39,11 +39,28 @@ class TokensAlignment:
 
     def add_translation(self, line: Line) -> None:
         """Append translated text segments that overlap with a line."""
-        for ts in self.all_translation_segments:
-            if ts.is_within(line):
-                line.translation += ts.text + (self.sep if ts.text else '')
-            elif line.translation:
-                break
+        added_segments = []  # 用于记录已添加的 ts，按遍历顺序（从后往前）
+    
+        for ts in reversed(self.all_translation_segments):
+            if not ts.is_within(line):
+                continue
+            
+            # 检查当前 ts 是否被任何一个已添加的 segment 覆盖
+            is_covered = False
+            for added in added_segments:
+                if added.start <= ts.start and added.end >= ts.end:
+                    is_covered = True
+                    break
+            
+            if not is_covered:
+                added_segments.append(ts)
+        for ts in reversed(added_segments):
+            line.translation += ((ts.text + self.sep) if ts.text else '')
+        # for ts in self.all_translation_segments:
+        #     if ts.is_within(line):
+        #         line.translation +=  ((ts.text + self.sep) if ts.text else '')
+        #     elif line.translation:
+        #         break
 
 
     def compute_punctuations_segments(self, tokens: Optional[List[ASRToken]] = None) -> List[Segment]:

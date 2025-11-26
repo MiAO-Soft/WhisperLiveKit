@@ -397,7 +397,7 @@ label {
 /* Transcript area */
 #linesTranscript {
   margin: 0 auto;
-  max-width: 700px;
+  /* max-width: 700px; */
   text-align: left;
   font-size: 16px;
 }
@@ -428,6 +428,18 @@ label {
   font-size: 14px;
   margin-bottom: 0px;
   color: var(--label-dia-text);
+}
+
+.translation_text {
+  margin-left: 4px;
+  color: red
+}
+
+.translation_icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .label_transcription {

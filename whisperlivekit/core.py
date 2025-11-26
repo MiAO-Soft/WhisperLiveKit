@@ -47,6 +47,9 @@ class TranscriptionEngine:
             "diarization_backend": "sortformer",
             "backend_policy": "simulstreaming",
             "backend": "auto",
+            "local_api": False,
+            "whisper_cpp_base_url": "http://127.0.0.1:11818",
+            "translate_base_url": "http://127.0.0.1:1234"
         }
         global_params = update_with_kwargs(global_params, kwargs)
 
@@ -59,6 +62,7 @@ class TranscriptionEngine:
             "model_path": None,
             "lan": "auto",
             "direct_english_translation": False,
+            "whisper_cpp_base_url": "http://127.0.0.1:11818",
         }
         transcription_common_params = update_with_kwargs(transcription_common_params, kwargs)                                            
 
@@ -72,6 +76,10 @@ class TranscriptionEngine:
             global_params['vac'] = not kwargs['no_vac']
 
         self.args = Namespace(**{**global_params, **transcription_common_params})
+
+        if self.args.local_api == True:
+            self.args.backend_policy = "localagreement"
+            self.args.backend = "whisper.cpp-api"
         
         self.asr = None
         self.tokenizer = None
@@ -115,7 +123,6 @@ class TranscriptionEngine:
                     getattr(self.asr, "encoder_backend", "whisper"),
                 )
             else:
-                
                 whisperstreaming_params = {
                     "buffer_trimming": "segment",
                     "confidence_validation": False,
@@ -151,19 +158,20 @@ class TranscriptionEngine:
         
         self.translation_model = None
         if self.args.target_language:
-            if self.args.lan == 'auto' and backend_policy != "simulstreaming":
-                raise Exception('Translation cannot be set with language auto when transcription backend is not simulstreaming')
-            else:
-                try:
-                    from nllw import load_model
-                except:
-                    raise Exception('To use translation, you must install nllw: `pip install nllw`')
-                translation_params = { 
-                    "nllb_backend": "transformers",
-                    "nllb_size": "600M"
-                }
-                translation_params = update_with_kwargs(translation_params, kwargs)
-                self.translation_model = load_model([self.args.lan], **translation_params) #in the future we want to handle different languages for different speakers
+            if self.args.local_api is not True:
+                if self.args.lan == 'auto' and backend_policy != "simulstreaming":
+                    raise Exception('Translation cannot be set with language auto when transcription backend is not simulstreaming')
+                else:
+                    try:
+                        from nllw import load_model
+                    except:
+                        raise Exception('To use translation, you must install nllw: `pip install nllw`')
+                    translation_params = { 
+                        "nllb_backend": "transformers",
+                        "nllb_size": "600M"
+                    }
+                    translation_params = update_with_kwargs(translation_params, kwargs)
+                    self.translation_model = load_model([self.args.lan], **translation_params) #in the future we want to handle different languages for different speakers
         TranscriptionEngine._initialized = True
 
 
@@ -188,8 +196,12 @@ def online_diarization_factory(args, diarization_backend):
 
 
 def online_translation_factory(args, translation_model):
-    #should be at speaker level in the future:
-    #one shared nllb model for all speaker
-    #one tokenizer per speaker/language
-    from nllw import OnlineTranslation
-    return OnlineTranslation(translation_model, [args.lan], [args.target_language])
+    if args.local_api == True:
+        from translation import OnlineTranslation
+        return OnlineTranslation(args.translate_base_url, [args.lan], [args.target_language])
+    else:
+        #should be at speaker level in the future:
+        #one shared nllb model for all speaker
+        #one tokenizer per speaker/language
+        from nllw import OnlineTranslation
+        return OnlineTranslation(translation_model, [args.lan], [args.target_language])
