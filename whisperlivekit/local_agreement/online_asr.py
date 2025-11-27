@@ -5,6 +5,10 @@ from typing import List, Tuple, Optional
 from whisperlivekit.timed_objects import ASRToken, Sentence, Transcript
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+
 
 class HypothesisBuffer:
     """
@@ -62,6 +66,11 @@ class HypothesisBuffer:
         committed: List[ASRToken] = []
         while self.new:
             current_new = self.new[0]
+            if len(self.buffer) > 0 and current_new.detected_language != self.buffer[0].detected_language:
+                # commit buffer first, or text lost
+                committed.append(self.buffer[0])
+                logger.debug(f"Commit buffer first {self.buffer[0]}, or it will lost")
+                self.buffer.pop(0)
             if self.confidence_validation and current_new.probability and current_new.probability > 0.95:
                 committed.append(current_new)
                 self.last_committed_word = current_new.text
@@ -217,7 +226,7 @@ class OnlineASRProcessor:
         current_audio_processed_upto = self.get_audio_buffer_end_time()
         prompt_text, _ = self.prompt()
         logger.debug(
-            f"Transcribing {len(self.audio_buffer)/self.SAMPLING_RATE:.2f} seconds from {self.buffer_time_offset:.2f}"
+            f"Transcribing {len(self.audio_buffer)/self.SAMPLING_RATE:.2f} seconds from {self.buffer_time_offset:.2f}, last commit {self.transcript_buffer.last_committed_time}"
         )
         res = self.asr.transcribe(self.audio_buffer, init_prompt=prompt_text)
         tokens = self.asr.ts_words(res)
@@ -228,10 +237,11 @@ class OnlineASRProcessor:
         if committed_tokens:
             self.time_of_last_asr_output = self.committed[-1].end
 
+        logger.debug(f">>>> ASRED: {self.concatenate_tokens(tokens).text}")
         completed = self.concatenate_tokens(committed_tokens)
         logger.debug(f">>>> COMPLETE NOW: {completed.text}")
         incomp = self.concatenate_tokens(self.transcript_buffer.buffer)
-        logger.debug(f"INCOMPLETE: {incomp.text}")
+        logger.debug(f">>> INCOMPLETE: {incomp.text}")
 
         buffer_duration = len(self.audio_buffer) / self.SAMPLING_RATE
         if not committed_tokens and buffer_duration > self.buffer_trimming_sec:
@@ -306,9 +316,10 @@ class OnlineASRProcessor:
                 self.chunk_at(chunk_time)
             return
         
-        logger.debug("Processing committed tokens for segmenting")
         ends = self.asr.segments_end_ts(res)
         last_committed_time = self.committed[-1].end        
+        logger.debug(f"Processing committed tokens for segmenting {last_committed_time}")
+
         chunk_done = False
         if len(ends) > 1:
             logger.debug("Multiple segments available for chunking")
@@ -317,8 +328,8 @@ class OnlineASRProcessor:
                 ends.pop(-1)
                 e = ends[-2] + self.buffer_time_offset
             if e <= last_committed_time:
-                logger.debug(f"--- Segment chunked at {e:.2f}")
-                self.chunk_at(e)
+                logger.debug(f"--- Segment chunked at {last_committed_time:.2f}")
+                self.chunk_at(last_committed_time)
                 chunk_done = True
             else:
                 logger.debug("--- Last segment not within committed area")
@@ -344,7 +355,7 @@ class OnlineASRProcessor:
         self.audio_buffer = self.audio_buffer[int(cut_seconds * self.SAMPLING_RATE):]
         self.buffer_time_offset = time
         logger.debug(
-            f"Audio buffer length after chunking: {len(self.audio_buffer)/self.SAMPLING_RATE:.2f}s"
+            f"Audio buffer length after chunking: {len(self.audio_buffer)/self.SAMPLING_RATE:.2f}s, self.buffer_time_offset = {self.buffer_time_offset}"
         )
 
     def words_to_sentences(self, tokens: List[ASRToken]) -> List[Sentence]:
@@ -398,9 +409,10 @@ class OnlineASRProcessor:
         Returns a tuple: (list of remaining ASRToken objects, float representing the final audio processed up to time).
         """
         remaining_tokens = self.transcript_buffer.buffer
-        logger.debug(f"Final non-committed tokens: {remaining_tokens}")
+        
         final_processed_upto = self.buffer_time_offset + (len(self.audio_buffer) / self.SAMPLING_RATE)
         self.buffer_time_offset = final_processed_upto
+        logger.debug(f"Final non-committed tokens: {remaining_tokens}, {self.buffer_time_offset}")
         return remaining_tokens, final_processed_upto
 
     def concatenate_tokens(

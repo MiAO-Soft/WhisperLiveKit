@@ -178,7 +178,8 @@ class DiartDiarization:
         
         self.pipeline = SpeakerDiarization(config=config)        
         self.observer = DiarizationObserver()
-        
+        self.buffer_audio = np.array([], dtype=np.float32)
+
         if use_microphone:
             self.source = MicrophoneAudioSource(block_duration=block_duration)
             self.custom_source = None
@@ -198,18 +199,24 @@ class DiartDiarization:
         )
         self.inference.attach_observers(self.observer)
         asyncio.get_event_loop().run_in_executor(None, self.inference)
+        
+
+    def insert_audio_chunk(self, pcm_array: np.ndarray):
+        self.buffer_audio = np.concatenate([self.buffer_audio, pcm_array.copy()])
 
     def insert_silence(self, silence_duration):
         self.observer.global_time_offset += silence_duration
 
-    async def diarize(self, pcm_array: np.ndarray):
+    async def diarize(self):
         """
         Process audio data for diarization.
         Only used when working with WebSocketAudioSource.
         """
         if self.custom_source:
-            self.custom_source.push_audio(pcm_array)            
-        # self.observer.clear_old_segments()        
+            self.custom_source.push_audio(self.buffer_audio)
+            self.buffer_audio = np.array([], dtype=np.float32)
+        # self.observer.clear_old_segments()
+        return self.observer.get_segments()
 
     def close(self):
         """Close the audio source."""

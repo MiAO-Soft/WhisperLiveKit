@@ -25,6 +25,18 @@ class TokensAlignment:
         self.sep: str = sep if sep is not None else ' '
         self.beg_loop: Optional[float] = None
 
+    def deduplicate_by_start_keep_longest_for_translation(self):
+        start_to_longest = {}
+
+        for seg in self.all_translation_segments:
+            if seg.start is None:
+                continue 
+            current = start_to_longest.get(seg.start)
+            if current is None or seg.end > current.end:
+                start_to_longest[seg.start] = seg
+
+        self.all_translation_segments = sorted(start_to_longest.values(), key=lambda x: x.start)
+    
     def update(self) -> None:
         """Drain state buffers into the running alignment context."""
         self.new_tokens, self.state.new_tokens = self.state.new_tokens, []
@@ -37,30 +49,16 @@ class TokensAlignment:
         self.all_translation_segments.extend(self.new_translation)
         self.new_translation_buffer = self.state.new_translation_buffer
 
+        # uniq translations for same start
+        self.deduplicate_by_start_keep_longest_for_translation()
+
     def add_translation(self, line: Line) -> None:
         """Append translated text segments that overlap with a line."""
-        added_segments = []  # 用于记录已添加的 ts，按遍历顺序（从后往前）
-    
-        for ts in reversed(self.all_translation_segments):
-            if not ts.is_within(line):
-                continue
-            
-            # 检查当前 ts 是否被任何一个已添加的 segment 覆盖
-            is_covered = False
-            for added in added_segments:
-                if added.start <= ts.start and added.end >= ts.end:
-                    is_covered = True
-                    break
-            
-            if not is_covered:
-                added_segments.append(ts)
-        for ts in reversed(added_segments):
-            line.translation += ((ts.text + self.sep) if ts.text else '')
-        # for ts in self.all_translation_segments:
-        #     if ts.is_within(line):
-        #         line.translation +=  ((ts.text + self.sep) if ts.text else '')
-        #     elif line.translation:
-        #         break
+        for ts in self.all_translation_segments:
+            if ts.is_within(line):
+                line.translation +=  ((ts.text + self.sep) if ts.text else '')
+            elif line.translation:
+                break
 
 
     def compute_punctuations_segments(self, tokens: Optional[List[ASRToken]] = None) -> List[Segment]:
@@ -133,7 +131,7 @@ class TokensAlignment:
                         intersec = self.intersection_duration(punctuation_segment, diarization_segment)
                         if intersec > max_overlap:
                             max_overlap = intersec
-                            max_overlap_speaker = diarization_segment.speaker + 1
+                            max_overlap_speaker = int(''.join(filter(str.isdigit, diarization_segment.speaker))) + 1
                     punctuation_segment.speaker = max_overlap_speaker
         
         lines = []
@@ -163,21 +161,33 @@ class TokensAlignment:
             diarization_buffer = ''
             lines = []
             current_line_tokens = []
+            last_detection_language = None
+            is_language_changed = False
             for token in self.all_tokens:
-                if token.is_silence():
+                if last_detection_language is not None and not token.is_silence() and last_detection_language != token.detected_language:
+                    is_language_changed = True
+                if token.is_silence() or is_language_changed:
                     if current_line_tokens:
                         lines.append(Line().build_from_tokens(current_line_tokens))
                         current_line_tokens = []
-                    end_silence = token.end if token.has_ended else time() - self.beg_loop
+                        last_detection_language = None
+
+
+                    if is_language_changed:
+                        current_line_tokens.append(token)
+
+                    end_silence = token.end if token.is_silence() and token.has_ended else time() - self.beg_loop
                     if lines and lines[-1].is_silent():
                         lines[-1].end = end_silence
-                    else:
+                    elif not is_language_changed:
                         lines.append(SilentLine(
                             start = token.start,
                             end = end_silence
                         ))
+                    is_language_changed = False
                 else:
                     current_line_tokens.append(token)
+                    last_detection_language = token.detected_language
             if current_line_tokens:
                 lines.append(Line().build_from_tokens(current_line_tokens))
         if current_silence:
@@ -188,6 +198,13 @@ class TokensAlignment:
                 lines.append(SilentLine(
                     start = current_silence.start,
                     end = end_silence
+                ))
+        elif len(lines) == 0:
+            if self.beg_loop is None:
+                self.beg_loop = time()
+            lines.append(SilentLine(
+                    start = 0,
+                    end = time() - self.beg_loop
                 ))
         if translation:
             [self.add_translation(line) for line in lines if not type(line) == Silence]

@@ -53,12 +53,8 @@ class OnlineTranslation:
         return new_validated_translation, buffer
 
     def validate_buffer_and_reset(self, duration: float = None):
-        self.backend.input_buffer = []
-        self.backend.target_prefix_tokens = []
-        self.backend.previous_tokens = []
-        self.backend.stable_prefix_segments = []
-        self.backend.stable_prefix_tokens = torch.tensor([], dtype=torch.int64)
-        self.backend.n_remaining_input_punctuation = 0
+        self.backend.reset(duration)
+        
         return self.last_buffer, TimedText()
 
     def insert_silence(self, duration: float = None):

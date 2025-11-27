@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Tuple, Optional, List, Dict, Union
 import os
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 PUNCTUATION_MARKS = {".", "!", "?", "。", "！", "？"}
 
@@ -32,6 +33,7 @@ class OpenAITranslationBackend:
         self.sentence_end_token_ids = set()
 
         self.input_buffer = []
+        self.last_translation = ''
         self.previous_tokens = []
         self.stable_prefix_segments = []
         self.stable_prefix_tokens = torch.tensor([], dtype=torch.int64)
@@ -43,9 +45,17 @@ class OpenAITranslationBackend:
             api_key = "sk-fake"
         self.client = OpenAI(base_url=self.base_url, api_key=api_key)
 
+    def reset(self, duration: float):
+        self.last_translation = ''
+        self.input_buffer = []
+        self.target_prefix_tokens = []
+        self.previous_tokens = []
+        self.stable_prefix_segments = []
+        self.stable_prefix_tokens = torch.tensor([], dtype=torch.int64)
+        self.n_remaining_input_punctuation = 0
 
     def create_translation_prompt(self, text, from_lan, to_lan) -> str:
-        prompt = f"""Translate following text from {from_lan} to {to_lan}:
+        prompt = f"""Translate following text from {from_lan} to {to_lan}, be aware that the translation u translated last time is '{self.last_translation}', please dont modify the translated part:
 {text}
 """
         return prompt
@@ -77,7 +87,7 @@ class OpenAITranslationBackend:
 
         result = response.choices[0].message.content.strip()
 
-        logger.info(f"translate {text} to {result}")
+        # logger.info(f"translated 【{text}】\n<--------------->\n【{result}】")
 
         return result
 

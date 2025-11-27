@@ -11,7 +11,7 @@ from whisperlivekit.ffmpeg_manager import FFmpegManager, FFmpegState
 from whisperlivekit.tokens_alignment import TokensAlignment
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 SENTINEL = object() # unique sentinel object for end of stream marker
 MIN_DURATION_REAL_SILENCE = 5
@@ -276,7 +276,7 @@ class AudioProcessor:
                         self.transcription.end_silence(item.duration, self.state.tokens[-1].end if self.state.tokens else 0)
                     if self.state.tokens:
                         asr_processing_logs += f" | last_end = {self.state.tokens[-1].end} |"
-                    logger.info(asr_processing_logs)
+                    # logger.debug(asr_processing_logs)
                     new_tokens = new_tokens or []
                     current_audio_processed_upto = max(current_audio_processed_upto, stream_time_end_of_current_pcm)
                 elif isinstance(item, ChangeSpeaker):
@@ -284,7 +284,7 @@ class AudioProcessor:
                     continue
                 elif isinstance(item, np.ndarray):
                     pcm_array = item
-                    logger.info(asr_processing_logs)
+                    # logger.debug(asr_processing_logs)
                     cumulative_pcm_duration_stream_time += len(pcm_array) / self.sample_rate
                     stream_time_end_of_current_pcm = cumulative_pcm_duration_stream_time
                     self.transcription.insert_audio_chunk(pcm_array, stream_time_end_of_current_pcm)
@@ -368,11 +368,11 @@ class AudioProcessor:
                     break
                 elif type(item) is Silence:
                     if item.is_starting:
-                        logger.info(f"translation is starting: {item}")
-                        continue
-                        # new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
+                        # logger.info(f"translation is starting: {item}")
+                        # continue
+                        new_translation, new_translation_buffer = self.translation.validate_buffer_and_reset()
                     if item.has_ended:
-                        logger.info(f"translation has_ended: {item}")
+                        # logger.info(f"translation has_ended: {item}")
                         self.translation.insert_silence(item.duration)
                         continue
                 elif isinstance(item, ChangeSpeaker):

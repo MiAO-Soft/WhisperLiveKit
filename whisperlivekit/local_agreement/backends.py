@@ -345,6 +345,7 @@ class WhisperCppApiASR(ASRBase):
             return o
         for segment in res.segments:
             o.append(ASRToken(start=segment['start'], end=segment['end'], text=segment['text'], detected_language=res.model_extra['detected_language']))
+            logger.debug(f"token: {o[-1]}")
             # for word in segment['words']:
             #     start = word['start']
             #     end = word['end']
@@ -405,7 +406,7 @@ class WhisperCppApiASR(ASRBase):
         json_data = resp.json()
         transcription = Transcription.model_validate(json_data)
 
-        # print(f"[Transcribe API] 响应时间: {elapsed:.3f} 秒 -> {transcription.text}")
+        print(f"[Transcribe API] 响应时间: {elapsed:.3f} 秒 -> {transcription.text}")
         return transcription
 
     def use_vad(self):

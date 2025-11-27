@@ -107,7 +107,7 @@ class SimulStreamingOnlineProcessor:
     def process_iter(self, is_last=False) -> Tuple[List[ASRToken], float]:
         """
         Process accumulated audio chunks using SimulStreaming.
-        
+       new_speaker 
         Returns a tuple: (list of committed ASRToken objects, float representing the audio processed up to time).
         """
         try:

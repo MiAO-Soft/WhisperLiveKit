@@ -61,7 +61,7 @@ def parse_args():
     parser.add_argument(
         "--diarization-backend",
         type=str,
-        default="sortformer",
+        default="diart",
         choices=["sortformer", "diart"],
         help="The diarization backend to use.",
     )
@@ -168,7 +168,7 @@ def parse_args():
     parser.add_argument(
         "--buffer_trimming_sec",
         type=float,
-        default=15,
+        default=10,
         help="Buffer trimming length threshold in seconds. If buffer length is longer, trimming sentence/segment is triggered.",
     )
     parser.add_argument(
