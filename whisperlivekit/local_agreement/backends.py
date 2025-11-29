@@ -303,7 +303,7 @@ class OpenaiApiASR(ASRBase):
 class WhisperCppApiASR(ASRBase):
     """Uses WhisperCpp's API for audio transcription."""
 
-    def __init__(self, lan=None, base_url=None, temperature=0, logfile=sys.stderr):
+    def __init__(self, lan=None, base_url=None, temperature=0.3, logfile=sys.stderr):
         self.logfile = logfile
 
         self.model_name = "ggml-medium"
@@ -381,8 +381,8 @@ class WhisperCppApiASR(ASRBase):
             "model": self.model_name,
             "response_format": self.response_format,
             "temperature": str(self.temperature),
-            "temperature_inc": "0.2", 
-            "timestamp_granularities[]": ["word", "segment"],
+            "temperature_inc": "0.1", 
+            "timestamp_granularities": ["segment"],
             "vad": "false",
             "n_processors": "1"
         }
@@ -390,7 +390,7 @@ class WhisperCppApiASR(ASRBase):
         # if self.task != "translate" and self.original_language:
         #     data["language"] = self.original_language
         # if prompt:
-        data["prompt"] = f"以下是{self.original_language}"
+        # data["prompt"] = f"以下是{self.original_language}"
 
         start_time = time.time()
 
