@@ -25,6 +25,18 @@ class TokensAlignment:
         self.sep: str = sep if sep is not None else ' '
         self.beg_loop: Optional[float] = None
 
+    def deduplicate_by_start_keep_longest_for_transpition(self):
+        start_to_longest = {}
+
+        for seg in self.all_tokens:
+            if seg.start is None:
+                continue 
+            current = start_to_longest.get(seg.start)
+            if current is None or seg.end > current.end:
+                start_to_longest[seg.start] = seg
+
+        self.all_tokens = sorted(start_to_longest.values(), key=lambda x: x.start)
+
     def deduplicate_by_start_keep_longest_for_translation(self):
         start_to_longest = {}
 
@@ -49,6 +61,7 @@ class TokensAlignment:
         self.all_translation_segments.extend(self.new_translation)
         self.new_translation_buffer = self.state.new_translation_buffer
 
+        self.deduplicate_by_start_keep_longest_for_transpition()
         # uniq translations for same start
         self.deduplicate_by_start_keep_longest_for_translation()
 
@@ -208,4 +221,5 @@ class TokensAlignment:
                 ))
         if translation:
             [self.add_translation(line) for line in lines if not type(line) == Silence]
+
         return lines, diarization_buffer, self.new_translation_buffer.text

@@ -37,7 +37,9 @@ class HypothesisBuffer:
         # Apply the offset to each token.
         new_tokens = [token.with_offset(offset) for token in new_tokens]
         # Only keep tokens that are roughly “new”
-        self.new = [token for token in new_tokens if token.start > self.last_committed_time - 0.1]
+        self.new = new_tokens # [token for token in new_tokens if token.start > self.last_committed_time - 0.1]
+
+        logger.warning(f"new tokens from [{','.join(str(t) for t in new_tokens)}] -> [{','.join(str(t) for t in self.new)}], offset: {offset} <> {self.last_committed_time}")
 
         if self.new:
             first_token = self.new[0]
@@ -57,6 +59,8 @@ class HypothesisBuffer:
                                 removed.append(repr(removed_token))
                             logger.debug(f"Removing last {i} words: {' '.join(removed)}")
                             break
+        else:
+            logger.warning(f"no new tokens from [{','.join(str(p) for p in new_tokens)}], offset: {offset}")
 
     def flush(self) -> List[ASRToken]:
         """
@@ -64,29 +68,42 @@ class HypothesisBuffer:
         between the previous hypothesis and the new tokens.
         """
         committed: List[ASRToken] = []
+        if not self.new and self.buffer:
+            # commit buffer or data will lost
+            logger.debug(f"flush but no new coming, commit buffer first {self.buffer[0]}, or it will lost")
+            committed.append(self.buffer[0])
+            self.buffer.pop(0)
         while self.new:
             current_new = self.new[0]
-            if len(self.buffer) > 0 and current_new.detected_language != self.buffer[0].detected_language:
+            if len(self.buffer) > 0 and current_new.detected_language != self.buffer[0].detected_language and self.buffer[0].probability > 0.9 and self.buffer[0].end - self.buffer[0].start > 1.0:
                 # commit buffer first, or text lost
                 committed.append(self.buffer[0])
-                logger.debug(f"Commit buffer first {self.buffer[0]}, or it will lost")
+                logger.debug(f"language changed, commit buffer first {self.buffer[0]}, or it will lost")
                 self.buffer.pop(0)
-            if self.confidence_validation and current_new.probability and current_new.probability > 0.95:
+            if self.confidence_validation and current_new.probability and current_new.probability > 0.9:
                 committed.append(current_new)
+                logger.debug(f"Commit buffer {current_new}, because probability is good.")
                 self.last_committed_word = current_new.text
                 self.last_committed_time = current_new.end
                 self.new.pop(0)
                 self.buffer.pop(0) if self.buffer else None
             elif not self.buffer:
                 break
-            elif current_new.text == self.buffer[0].text:
+            elif current_new.text == self.buffer[0].text or current_new.text.startswith(self.buffer[0].text) or (current_new.probability >= 0.8 and len(current_new.text) >= len(self.buffer[0].text)):
                 committed.append(current_new)
+                logger.debug(f"Commit buffer {current_new.text}, because text no change or probality is good.")
                 self.last_committed_word = current_new.text
                 self.last_committed_time = current_new.end
                 self.buffer.pop(0)
                 self.new.pop(0)
             else:
+                logger.debug(f"no commit buffer {current_new.text} <> {self.buffer[0].text}, text changed.")
                 break
+        
+        if not self.new and self.buffer:
+            # commit text which will lost
+            committed.extend(self.buffer)
+            logger.warning(f"commit buffer which will lost {self.buffer[0].text}")
         self.buffer = self.new
         self.new = []
         self.committed_in_buffer.extend(committed)
@@ -229,7 +246,11 @@ class OnlineASRProcessor:
             f"Transcribing {len(self.audio_buffer)/self.SAMPLING_RATE:.2f} seconds from {self.buffer_time_offset:.2f}, last commit {self.transcript_buffer.last_committed_time}"
         )
         res = self.asr.transcribe(self.audio_buffer, init_prompt=prompt_text)
+        # filter 请不吝点赞 etc.
         tokens = self.asr.ts_words(res)
+        if not tokens:
+            return [], current_audio_processed_upto
+        
         self.transcript_buffer.insert(tokens, self.buffer_time_offset)
         committed_tokens = self.transcript_buffer.flush()
         self.committed.extend(committed_tokens)
@@ -252,7 +273,11 @@ class OnlineASRProcessor:
                     f"Resetting buffer to prevent freezing."
                 )
                 self.init(offset=self.get_audio_buffer_end_time())
-                return [], current_audio_processed_upto
+                if self.transcript_buffer.buffer:
+                    # incase of lost of buffer data, just commit it
+                    committed_tokens = self.transcript_buffer.buffer
+                else:
+                    return [], current_audio_processed_upto
 
         if committed_tokens and self.buffer_trimming_way == "sentence":
             if len(self.audio_buffer) / self.SAMPLING_RATE > self.buffer_trimming_sec:
@@ -263,7 +288,7 @@ class OnlineASRProcessor:
             self.chunk_completed_segment(res)
             logger.debug("Chunking segment")
         logger.debug(
-            f"Length of audio buffer now: {len(self.audio_buffer)/self.SAMPLING_RATE:.2f} seconds"
+            f"Length of audio buffer now: {len(self.audio_buffer)/self.SAMPLING_RATE:.2f} seconds, <> {s} seconds"
         )
         if self.global_time_offset:
             for token in committed_tokens:
@@ -321,7 +346,7 @@ class OnlineASRProcessor:
         logger.debug(f"Processing committed tokens for segmenting {last_committed_time}")
 
         chunk_done = False
-        if len(ends) > 1:
+        if len(ends) >= 2:
             logger.debug("Multiple segments available for chunking")
             e = ends[-2] + self.buffer_time_offset
             while len(ends) > 2 and e > last_committed_time:

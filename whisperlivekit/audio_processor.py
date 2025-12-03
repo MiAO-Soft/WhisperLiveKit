@@ -9,9 +9,9 @@ from whisperlivekit.core import TranscriptionEngine, online_factory, online_diar
 from whisperlivekit.silero_vad_iterator import FixedVADIterator
 from whisperlivekit.ffmpeg_manager import FFmpegManager, FFmpegState
 from whisperlivekit.tokens_alignment import TokensAlignment
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 SENTINEL = object() # unique sentinel object for end of stream marker
 MIN_DURATION_REAL_SILENCE = 5
@@ -410,6 +410,23 @@ class AudioProcessor:
                 state = await self.get_current_state()
 
                 buffer_transcription_text = state.buffer_transcription.text if state.buffer_transcription else ''
+
+                # if self.tokens_alignment.all_tokens:
+                #     logger.debug(f"buffer_transcription_text: [{self.tokens_alignment.all_tokens[-1]}] <> [{buffer_transcription_text}]")
+                if self.tokens_alignment.all_tokens and buffer_transcription_text:
+                    intersection = ""
+                    last_line = self.tokens_alignment.all_tokens[-1]
+                    if not isinstance(last_line, Silence):
+                        last_line_text = last_line.text
+                        for i in range(min(len(last_line_text), len(buffer_transcription_text))):
+                            if last_line_text[i] == buffer_transcription_text[i]:
+                                intersection += last_line_text[i]
+                            else:
+                                break
+                        
+                        if intersection:
+                            buffer_transcription_text = buffer_transcription_text[len(intersection):]
+                            logger.warning(f"buffer_transcription_text: {buffer_transcription_text}, trim[{intersection}]")
 
                 response_status = "active_transcription"
                 if not lines and not buffer_transcription_text and not buffer_diarization_text:

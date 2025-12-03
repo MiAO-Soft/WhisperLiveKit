@@ -343,8 +343,18 @@ class WhisperCppApiASR(ASRBase):
         o = []
         if res is None:
             return o
+
+        detected_language=res.model_extra['detected_language']
+
         for segment in res.segments:
-            o.append(ASRToken(start=segment['start'], end=segment['end'], text=segment['text'], detected_language=res.model_extra['detected_language']))
+            text = segment['text']
+            if text.find('请不吝点赞') != -1 or text.find('支持明镜') != -1 or text.find('字幕:') != -1:
+                logger.warning(f"placeholder txt returned, {segment['text']}")
+                continue
+            if detected_language == 'chinese':
+                text += ', '
+            probability = math.exp(segment['avg_logprob'])
+            o.append(ASRToken(start=segment['start'], end=segment['end'], text=text, detected_language=detected_language, probability=probability))
             logger.debug(f"token: {o[-1]}")
             # for word in segment['words']:
             #     start = word['start']
